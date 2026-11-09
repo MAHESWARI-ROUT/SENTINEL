@@ -9,6 +9,7 @@ python -m uvicorn sentinel.api.app:get_app --factory --port 8000
 ```
 ### in dashboard
 ```
+open http://127.0.0.1:8000/
 click run both attacks
 wait for 20-30 sec
 click on approve...then try rollback option
