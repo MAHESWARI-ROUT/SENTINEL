@@ -1,0 +1,54 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SENTINEL analyst console</title>
+<style>
+:root{--bg:#f6f7fb;--card:#fff;--ink:#0e1a4f;--mut:#5a6385;--line:#dde2f0;--blue:#2b4bdb;--amber:#d99a00;--red:#d64545;--green:#2e9e5b}
+*{box-sizing:border-box}body{margin:0;font:14px/1.45 system-ui,sans-serif;background:var(--bg);color:var(--ink)}
+header{background:var(--ink);color:#fff;padding:14px 24px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+header h1{font-size:18px;margin:0 12px 0 0}button{border:0;border-radius:8px;padding:8px 12px;cursor:pointer;font-weight:600}
+.run{background:#f5b800;color:var(--ink)}.ok{background:var(--green);color:#fff}.no{background:var(--red);color:#fff}.ghost{background:#e8edff;color:var(--ink)}
+main{padding:20px 24px;display:grid;gap:18px;max-width:1200px;margin:auto}section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px}
+h2{margin:0 0 10px;font-size:15px}.pill{display:inline-block;padding:2px 8px;border-radius:99px;font-size:12px;font-weight:700;margin:0 4px 4px 0;background:#e8edff}
+.critical,.high{background:#fde4e4;color:var(--red)}.medium{background:#fff4d1;color:#8a6200}.low{background:#e6f5ec;color:var(--green)}
+table{width:100%;border-collapse:collapse}td,th{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{color:var(--mut);font-size:12px}
+.inc{border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px}.mut{color:var(--mut)}#live{font-size:12px}
+</style></head><body>
+<header><h1>SENTINEL</h1>
+<button class="run" onclick="sim('both')">Run both attacks</button><button class="run" onclick="sim('phishing')">Phishing</button>
+<button class="run" onclick="sim('lateral')">Lateral movement</button><button class="run" onclick="sim('benign')">Benign only</button>
+<span id="live" class="mut" style="color:#c9d1f5">connecting…</span></header>
+<main>
+<section><h2>Waiting for human approval</h2><div id="appr" class="mut">Run a scenario to begin.</div></section>
+<section><h2>Incidents</h2><div id="incs" class="mut"></div></section>
+<section><h2>SENTINEL vs rule-based baseline</h2><div id="met" class="mut"></div></section>
+<section><h2>Audit log <button class="ghost" onclick="verify()">Verify chain</button> <span id="ver"></span></h2><div id="aud"></div></section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const api=(p,m="GET")=>fetch("/api/"+p,{method:m,headers:{"Content-Type":"application/json"},body:m==="POST"?"{}":undefined}).then(r=>r.json());
+async function sim(s){$("incs").textContent="Running "+s+" (about 10 s)…";await api("simulate/"+s,"POST");refresh()}
+async function act(id,what){await api("actions/"+id+"/"+what,"POST");refresh()}
+async function verify(){const v=await api("audit/verify");$("ver").textContent=v.valid?"chain valid":"BROKEN at record "+v.broken_at}
+async function refresh(){
+ const [inc,appr,met,aud]=await Promise.all([api("incidents"),api("approvals"),api("metrics"),api("audit?limit=15")]);
+ $("appr").innerHTML=appr.length?`<table><tr><th>Action</th><th>Target</th><th>Why</th><th></th></tr>`+appr.map(a=>`<tr><td><b>${esc(a.action.type)}</b></td><td>${esc(a.action.target)}</td><td>${esc(a.action.rationale)}</td>
+ <td><button class="ok" onclick="act('${a.id}','approve')">Approve</button> <button class="no" onclick="act('${a.id}','reject')">Reject</button></td></tr>`).join("")+"</table>":"Nothing waiting.";
+ $("incs").innerHTML=inc.map(x=>{const i=x.incident,r=x.report;return `<div class="inc"><span class="pill ${i.severity}">${esc(i.severity)} ${i.severity_score}</span>
+ ${[...new Set(i.techniques.map(t=>t.id+" "+t.name))].map(t=>`<span class="pill">${esc(t)}</span>`).join("")}
+ <div class="mut">${i.alert_ids.length} alerts · ${esc(i.entities.join(", "))}</div>
+ <div>${r?esc(r.summary):"Below the triage threshold: waiting for more evidence, no action taken."}</div>
+ ${x.actions.map(a=>`<div class="mut">${esc(a.action.type)} → ${esc(a.action.target)} <b>${esc(a.decision)}</b> ${a.decision==="executed"&&a.impact==="high"?`<button class="ghost" onclick="act('${a.id}','rollback')">Roll back</button>`:""}</div>`).join("")}</div>`}).join("")||"No incidents yet.";
+ const b=met.baseline,s=met.sentinel,ps=met.per_scenario||{};
+ $("met").innerHTML=`<table><tr><th></th><th>Rule baseline</th><th>SENTINEL</th></tr>
+ <tr><td>Items an analyst must read</td><td>${b.analyst_items}</td><td>${s.analyst_items}</td></tr>
+ <tr><td>False-positive items</td><td>${b.false_positive_items}</td><td>${s.false_positive_items}</td></tr>
+ <tr><td>Malicious events recalled</td><td>${(b.event_recall*100).toFixed(0)}%</td><td>${(s.event_recall*100).toFixed(0)}%</td></tr>
+ <tr><td>Analyst minutes (assumed)</td><td>${met.analyst_minutes.baseline}</td><td>${met.analyst_minutes.sentinel}</td></tr>
+ ${Object.entries(ps).map(([k,v])=>`<tr><td>${esc(k)}: time to confirm / contain (s)</td><td>${v.baseline_mttd_s} / ${v.baseline_mttr_s}</td><td>${v.sentinel_mttd_s} / ${v.sentinel_mttr_s}</td></tr>`).join("")}</table>
+ <div class="mut">Simulated times; manual figures use the assumptions in config.py.</div>`;
+ $("aud").innerHTML=`<table>`+aud.reverse().map(r=>`<tr><td>${r.seq}</td><td>${esc(r.actor)}</td><td>${esc(r.action)}</td><td class="mut">${esc(r.hash.slice(0,12))}…</td></tr>`).join("")+"</table>";
+}
+function live(){const ws=new WebSocket((location.protocol==="https:"?"wss://":"ws://")+location.host+"/ws");
+ ws.onopen=()=>$("live").textContent="● live";ws.onmessage=()=>refresh();ws.onclose=()=>{$("live").textContent="reconnecting…";setTimeout(live,2000)}}
+live();refresh();
+</script></body></html>

@@ -1,0 +1,37 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "SENTINEL: end-to-end demo",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "sentinel.demo",
+      "args": ["--scenario", "both"],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "SENTINEL: demo (leave actions pending)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "sentinel.demo",
+      "args": ["--scenario", "both", "--no-approve"],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "SENTINEL: analyst console (API + dashboard)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": ["sentinel.api.app:get_app", "--factory", "--port", "8000"],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "SENTINEL: run tests",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["-q"],
+      "console": "integratedTerminal"
+    }
+  ]
+}
